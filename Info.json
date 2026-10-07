@@ -1,0 +1,15 @@
+{
+  "pkgId": "eternal.future.audiopackextension",
+  "name": "MusicPack Extension",
+  "author": "lzup",
+  "description": "基于https://github.com/qingqing114514/qingshemg改进而来的音乐包模块，音效播放延迟略低",
+  "version": "1.3.0",
+  "versionCode": 130,
+  "dependence": [],
+  "support": {
+    "android": {
+      "arm64": true,
+      "arm": false
+    }
+  }
+}
