@@ -150,9 +150,30 @@ python3 tools/gen_sxfnames.py \
 `families=17`（`dig_ / player_hit_ / item_ / npc_hit_ / npc_killed_ / female_hit_ / zombie_ /
 splash_ / drip_ / thunder_ / roar_ / tink_ / mech_ / coin_ / coins / liquid_ / custom/`）。
 
-> 注意：`config.json` 里的 `type` 走 **SoundPool** 路径（ogg/mp3 音效），
-> 它的取值同样是 `PlaySound` 的 `type`，**只有 0..69 有意义**；
-> 需要精确到变体时请用 OpenSL 路径（`x_<名字>.xnb`），文件名现已全覆盖。
+### config.json 的 `style` 字段（ogg/mp3 音效精确到变体）
+
+`config.json` 里的 `type` 走 **SoundPool** 路径（ogg/mp3），取值是 `PlaySound` 的 `type`，
+**只有 0..69 有意义**。要精确到某个变体，加 `style`：
+
+```json
+[
+  { "enable": true, "type": 3, "style": 26, "file": "hit26.ogg" },   // 只换 NPC 受击 #26
+  { "enable": true, "type": 3,             "file": "hit_all.ogg" }   // 换全部 NPC 受击
+]
+```
+
+| `style` | 含义 |
+|:--|:--|
+| 省略 / `-1` | 匹配该 `type` 的**全部**变体（旧行为，向后兼容） |
+| `>= 0` | 只匹配该变体 |
+
+匹配优先级：**精确 `(type,style)` > 通配 `(type,-1)`**，即写了 `hit_all.ogg` 又写了
+`hit26.ogg` 时，#26 用后者、其余用前者。
+
+同样的修正也作用于包内文件：`sfx_NPC_Hit_26.ogg`（或 `sfx_npchit26.ogg`）现在只会替换
+**#26**，而不再像之前那样把整个 type 都顶掉（旧代码在 `sfx_map_add()` 处把 style 丢了）。
+
+> xnb 音效走 OpenSL 路径，选择器就是文件名（`x_<名字>.xnb`），本来就支持精确到变体。
 
 ## 许可证
 

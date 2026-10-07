@@ -73,12 +73,20 @@ families = 17    （dig_ / player_hit_ / item_ / npc_hit_ / npc_killed_ / female
 
 ---
 
-## 待办（本次刻意没做）
+## 已完成（续）
 
-1. **`config.json` 加 `style` 字段**（SoundPool 路径）
-   现在 config 只能给到 `type`（0..69），ogg/mp3 音效只能**整组替换**：
-   即使文件名叫 `sfx_npc_hit_17.ogg`，`core.c` 里 `sfx_map_add(t,…)` 也会把 style 丢掉。
-   → 需要「只换某一个变体的 ogg」时才做（约 20 行改动）。
+### 4. `config.json` 的 `style` 字段（SoundPool 路径精确到变体）
+
+`core.c` 里 `sfx_map_add()` 之前会把 style 丢掉，导致 ogg/mp3 音效只能**整组替换**。
+现已打通：
+
+- `config.json` 支持 `{ "type": 3, "style": 26, "file": "hit26.ogg" }`；省略 `style` = 匹配整个 type（向后兼容）
+- 包内 `sfx_NPC_Hit_26.ogg` / `sfx_npchit26.ogg` 现在只替换 #26，不再顶掉整个 type
+- `index.txt` 的 `S` 行与 cache 重建路径都保留 style
+- 匹配优先级：精确 `(type,style)` > 通配 `(type,-1)`
+- 日志补上 style：`sfx: loaded type=3 style=26 sid=…`
+
+## 待办
 
 2. **运行时 dump 校验表**
    表是从 PC 源码生成的（与移动端 `dump.cs` 的 70 const + 506 字段**完全同构**，可信），

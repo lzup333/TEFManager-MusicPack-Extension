@@ -153,6 +153,7 @@ typedef struct {
 typedef struct {
     int enable;
     int type;
+    int style; /* -1 = 该 type 的全部 style；>=0 = 精确匹配 */
     char file[200];
     char pack[200];
 } sfx_item_t;
@@ -213,7 +214,7 @@ static void parse_cfg(const char *s, size_t n) {
         const char *c = strchr(o, '}');
         if (!c) break;
         const char *e;
-        int en = 1, mu = 0, ty = 0;
+        int en = 1, mu = 0, ty = 0, sty = -1;
         char file[200] = {0}, pack[200] = {0};
         e = find_key(o, c, "enable");
         if (e && e < c) en = (strncmp(e, "true", 4) == 0);
@@ -221,6 +222,9 @@ static void parse_cfg(const char *s, size_t n) {
         if (e && e < c) mu = atoi(e);
         e = find_key(o, c, "type");
         if (e && e < c) ty = atoi(e);
+        /* 可选：style 精确到变体（如 NPC 受击 #26）。缺省 -1 = 整个 type */
+        e = find_key(o, c, "style");
+        if (e && e < c) sty = atoi(e);
         e = find_key(o, c, "file");
         if (e && e < c) jstr(e, file, sizeof(file));
         e = find_key(o, c, "pack");
@@ -231,6 +235,7 @@ static void parse_cfg(const char *s, size_t n) {
                 memset(si, 0, sizeof(*si));
                 si->enable = en;
                 si->type = ty;
+                si->style = sty;
                 strncpy(si->file, file, sizeof(si->file) - 1);
                 strncpy(si->pack, pack, sizeof(si->pack) - 1);
                 g_sfxcount++;
@@ -250,7 +255,7 @@ static void parse_cfg(const char *s, size_t n) {
     }
     LOGI("cfg items=%d sfx=%d", g_count, g_sfxcount);
     for (int i = 0; i < g_count; i++) LOGI("  [music] music=%d file=%s", g_items[i].music, g_items[i].file);
-    for (int i = 0; i < g_sfxcount; i++) LOGI("  [sfx] type=%d file=%s", g_sfxitems[i].type, g_sfxitems[i].file);
+    for (int i = 0; i < g_sfxcount; i++) LOGI("  [sfx] type=%d style=%d file=%s", g_sfxitems[i].type, g_sfxitems[i].style, g_sfxitems[i].file);
 }
 
 static void load_cfg(void) {
@@ -389,7 +394,7 @@ static int parse_music_id(const char *entry) {
     return v;
 }
 /* Sounds/<digits>.<ext> -> sfx type */
-static void sfx_map_add(int type, const char *path);
+static void sfx_map_add(int type, int style, const char *path);
 
 static int parse_sfx_id(const char *entry) {
     const char *b = strstr(entry, "Sounds/");
@@ -533,9 +538,10 @@ static int rebuild_from_index(const char *cdir) {
             char key[64] = {0}, bn[256] = {0};
             if (sscanf(line + 1, "%63s %255s", key, bn) != 2) continue;
             int t = 0, s2 = -1;
-            if (sscanf(key, "sfx:%d:%d", &t, &s2) == 1) s2 = -1;
+            /* "sfx:T:S" 保留 style；"sfx:T" 得到 s2=-1（通配） */
+            if (sscanf(key, "sfx:%d:%d", &t, &s2) < 1) continue;
             snprintf(full, sizeof(full), "%s/%s", cdir, bn);
-            sfx_map_add(t, full);
+            sfx_map_add(t, s2, full);
         }
     }
     fclose(f);
@@ -629,7 +635,7 @@ static void rebuild_from_cache(const char *cdir, int pidx) {
             }
             if (st2 < 0) sfx_name_lookup(base, &st2, &ss);
             if (st2 >= 0) {
-                sfx_map_add(st2, full);
+                sfx_map_add(st2, ss, full);
                 gs++;
             }
         }
@@ -819,7 +825,7 @@ static void import_pack(const char *zipname, int pidx) {
             char dst[800];
             snprintf(dst, sizeof(dst), "%s/sfx_%s", cdir, base);
             if (mz_zip_reader_extract_to_file(&zip, i, dst, 0)) {
-                sfx_map_add(st, dst);
+                sfx_map_add(st, sst, dst);
                 gotsfx++;
                 LOGI("pack%d: sfx type=%d s=%d -> %s", pidx, st, sst, dst);
             } else {
@@ -1670,14 +1676,15 @@ static int g_sfx_n = 0;
 #define SFX_MAP_MAX 256
 typedef struct {
     int type;
+    int style; /* -1 = 通配 */
     char path[256];
 } sfxmap_t;
 static sfxmap_t g_sfxmap[SFX_MAP_MAX];
 static int g_sfxmap_n = 0;
-static void sfx_map_add(int type, const char *path) {
+static void sfx_map_add(int type, int style, const char *path) {
     tbl_lock();
     for (int i = 0; i < g_sfxmap_n; i++) {
-        if (g_sfxmap[i].type == type) {
+        if (g_sfxmap[i].type == type && g_sfxmap[i].style == style) {
             strncpy(g_sfxmap[i].path, path, sizeof(g_sfxmap[i].path) - 1);
             g_sfxmap[i].path[sizeof(g_sfxmap[i].path) - 1] = 0;
             tbl_unlock();
@@ -1686,26 +1693,38 @@ static void sfx_map_add(int type, const char *path) {
     }
     if (g_sfxmap_n < SFX_MAP_MAX) {
         g_sfxmap[g_sfxmap_n].type = type;
+        g_sfxmap[g_sfxmap_n].style = style;
         strncpy(g_sfxmap[g_sfxmap_n].path, path, sizeof(g_sfxmap[g_sfxmap_n].path) - 1);
         g_sfxmap[g_sfxmap_n].path[sizeof(g_sfxmap[g_sfxmap_n].path) - 1] = 0;
         g_sfxmap_n++;
     }
     tbl_unlock();
 }
-static const char *sfx_map_lookup(int type) {
-    for (int i = 0; i < g_sfxmap_n; i++)
-        if (g_sfxmap[i].type == type) return g_sfxmap[i].path;
-    return 0;
+/* 精确 (type,style) 优先，其次 (type,-1) 通配 */
+static const char *sfx_map_lookup(int type, int style) {
+    const char *wild = 0;
+    for (int i = 0; i < g_sfxmap_n; i++) {
+        if (g_sfxmap[i].type != type) continue;
+        if (g_sfxmap[i].style == style) return g_sfxmap[i].path;
+        if (g_sfxmap[i].style < 0) wild = g_sfxmap[i].path;
+    }
+    return wild;
 }
 
-static int sfx_lookup_nolock(int type) {
-    for (int i = 0; i < g_sfx_n; i++)
-        if (g_sfx_type[i] == type) return g_sfx_sid[i];
-    return -1;
+/* SoundPool 条目：精确 (type,style) 优先，其次 (type,-1) 通配 */
+static int g_sp_style[SFX_MAX]; /* SoundPool style */
+static int sfx_lookup_nolock(int type, int style) {
+    int wild = -1;
+    for (int i = 0; i < g_sfx_n; i++) {
+        if (g_sfx_type[i] != type) continue;
+        if (g_sp_style[i] == style) return g_sfx_sid[i];
+        if (g_sp_style[i] < 0) wild = g_sfx_sid[i];
+    }
+    return wild;
 }
-static int sfx_lookup(int type) {
+static int sfx_lookup(int type, int style) {
     tbl_lock();
-    int r = sfx_lookup_nolock(type);
+    int r = sfx_lookup_nolock(type, style);
     tbl_unlock();
     return r;
 }
@@ -1757,24 +1776,31 @@ static void sfx_scan_load(void) {
         int sid = sfx_load_file(e, full);
         if (sid > 0 && g_sfx_n < SFX_MAX) {
             g_sfx_type[g_sfx_n] = g_sfxitems[i].type;
+            g_sp_style[g_sfx_n] = g_sfxitems[i].style;
             g_sfx_sid[g_sfx_n] = sid;
             g_sfx_n++;
-            LOGI("sfx: loaded type=%d sid=%d file=%s", g_sfxitems[i].type, sid, g_sfxitems[i].file);
+            LOGI("sfx: loaded type=%d style=%d sid=%d file=%s",
+                 g_sfxitems[i].type, g_sfxitems[i].style, sid, g_sfxitems[i].file);
         } else {
-            LOGE("sfx: load fail type=%d file=%s", g_sfxitems[i].type, g_sfxitems[i].file);
+            LOGE("sfx: load fail type=%d style=%d file=%s",
+                 g_sfxitems[i].type, g_sfxitems[i].style, g_sfxitems[i].file);
         }
     }
-    /* load sfx from workshop packs (type = digits filename) */
+    /* load sfx from packs / cache (type[:style] 来自文件名或 index.txt) */
     for (int i = 0; i < g_sfxmap_n; i++) {
-        if (sfx_lookup_nolock(g_sfxmap[i].type) > 0) continue; /* config priority */
+        /* config 优先：该 (type,style) 或同 type 的通配已有 config 条目则跳过 */
+        if (sfx_lookup_nolock(g_sfxmap[i].type, g_sfxmap[i].style) > 0) continue;
         int sid = sfx_load_file(e, g_sfxmap[i].path);
         if (sid > 0 && g_sfx_n < SFX_MAX) {
             g_sfx_type[g_sfx_n] = g_sfxmap[i].type;
+            g_sp_style[g_sfx_n] = g_sfxmap[i].style;
             g_sfx_sid[g_sfx_n] = sid;
             g_sfx_n++;
-            LOGI("sfx(pack): loaded type=%d sid=%d file=%s", g_sfxmap[i].type, sid, g_sfxmap[i].path);
+            LOGI("sfx(pack): loaded type=%d style=%d sid=%d file=%s",
+                 g_sfxmap[i].type, g_sfxmap[i].style, sid, g_sfxmap[i].path);
         } else {
-            LOGE("sfx(pack): fail type=%d file=%s", g_sfxmap[i].type, g_sfxmap[i].path);
+            LOGE("sfx(pack): fail type=%d style=%d file=%s",
+                 g_sfxmap[i].type, g_sfxmap[i].style, g_sfxmap[i].path);
         }
     }
     LOGI("sfx: total loaded=%d", g_sfx_n);
@@ -1841,9 +1867,9 @@ static void sfx_init(void) {
     sfx_scan_load();
 }
 
-static void sfx_play(int type, float vol) {
+static void sfx_play(int type, int style, float vol) {
     if (!g_sfx_ok || !g_sfxpool) return;
-    int sid = sfx_lookup(type);
+    int sid = sfx_lookup(type, style);
     if (sid <= 0) return;
     int d = 0;
     JNIEnv *e = jenv(&d);
@@ -1887,11 +1913,11 @@ static bool sfx_prefix(patch_handle_t inst, void **args, const patch_method_sign
     snprintf(k1, sizeof(k1), "sfx:%d:%d", type, style);
     snprintf(k2, sizeof(k2), "sfx:%d", type);
     if (sl_try_play2(k1, k2, 0.0f, vol)) return true;
-    /* 2) fallback SoundPool (ogg) */
+    /* 2) fallback SoundPool (ogg/mp3)：精确 (type,style) 优先，其次 type 通配 */
     if (!g_sfx_ok) return false;
-    int sid = sfx_lookup(type);
+    int sid = sfx_lookup(type, style);
     if (sid <= 0) return false;
-    sfx_play(type, vol);
+    sfx_play(type, style, vol);
     return true;
 }
 

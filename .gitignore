@@ -1,0 +1,12 @@
+# 构建产物
+build/
+Cache/
+__pycache__/
+*.o
+*.pyc
+
+# dist：只跟踪发布压缩包，中间产物不入库
+dist/pack/
+dist/Info.json
+dist/Manifest.json
+dist/*.tefpkg
