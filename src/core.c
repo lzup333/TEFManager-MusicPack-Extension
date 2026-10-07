@@ -177,6 +177,48 @@ static volatile int g_fail_music = -1;
 static volatile int g_cur_music = -1;
 static float g_vol_prev = -1.0f;
 static int g_vol_same_n = 0;
+
+/* ===== 游戏音量（Terraria.Main 静态字段）=====
+ * 原版是在 LegacySoundPlayer.PlaySound() 内部把音量乘上 Main.soundVolume 的；
+ * 我们在 hook 里跳过了原版，所以必须自己乘，否则「设置里把声音拉到 0」对替换后的音效无效。
+ * 音乐同理：直接读 Main.musicVolume（能正确取到 0），而不是从 hook 收到的音量反推
+ * （反推拿不到 0，会把上一次的非零音量一直用下去）。
+ */
+static patch_handle_t g_f_soundVol = 0, g_f_musicVol = 0;
+static int g_volfields_ok = 0;
+static volatile float g_sound_vol = 1.0f; /* 最新 soundVolume */
+
+static void main_vol_init(void) {
+    patch_handle_t mt = patchlib_type_get_type("Terraria", "Main");
+    if (patchlib_is_valid(mt)) {
+        g_f_soundVol = patchlib_type_get_field(mt, "soundVolume");
+        g_f_musicVol = patchlib_type_get_field(mt, "musicVolume");
+        g_volfields_ok = patchlib_is_valid(g_f_soundVol) && patchlib_is_valid(g_f_musicVol);
+    }
+    LOGI("vol: sound=%d music=%d ok=%d", (int)patchlib_is_valid(g_f_soundVol),
+         (int)patchlib_is_valid(g_f_musicVol), g_volfields_ok);
+}
+
+/* 每帧刷新：sound -> g_sound_vol；music -> g_game_vol（允许 0） */
+static void main_vol_refresh(void) {
+    if (!g_volfields_ok) return;
+    float v = 0.0f;
+    patchlib_field_get_value(g_f_soundVol, PATCH_NULL, &v);
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    g_sound_vol = v;
+    patchlib_field_get_value(g_f_musicVol, PATCH_NULL, &v);
+    if (v < 0.0f) v = 0.0f;
+    if (v > 1.0f) v = 1.0f;
+    g_game_vol = v;
+}
+
+/* 音乐音量兜底：字段可用时 0 就是 0；读不到字段才退回旧行为 */
+static float vol_or_default(void) {
+    if (g_volfields_ok) return g_game_vol;
+    return g_game_vol > 0.0f ? g_game_vol : 0.75f;
+}
+
 static const char *skip_ws(const char *p) {
     while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
     return p;
@@ -1200,7 +1242,7 @@ static void update_player_vol(void) {
         if (c) {
             jmethodID sv = (*e)->GetMethodID(e, c, "setVolume", "(FF)V");
             if (sv) {
-                float vv = g_game_vol > 0.0f ? g_game_vol : 0.75f;
+                float vv = vol_or_default();
                 if (vv > 1.0f) vv = 1.0f;
                 (*e)->CallVoidMethod(e, pl, sv, vv, vv);
                 if ((*e)->ExceptionOccurred(e)) (*e)->ExceptionClear(e);
@@ -1295,7 +1337,7 @@ static void *fadein_thread_fn(void *a) {
     int steps = 40;
     for (int i = 0; i <= steps && g_fadein_running; i++) {
         float t = (float)i / (float)steps;
-        float base = g_game_vol > 0.0f ? g_game_vol : 0.75f;
+        float base = vol_or_default();
         if (base > 1.0f) base = 1.0f;
         float vv = base * t;
         if (sv) (*e)->CallVoidMethod(e, pl, sv, vv, vv);
@@ -1306,7 +1348,7 @@ static void *fadein_thread_fn(void *a) {
         nanosleep(&ts, 0);
     }
     if (sv) {
-        float base = g_game_vol > 0.0f ? g_game_vol : 0.75f;
+        float base = vol_or_default();
         if (base > 1.0f) base = 1.0f;
         (*e)->CallVoidMethod(e, pl, sv, base, base);
         if ((*e)->ExceptionOccurred(e)) (*e)->ExceptionClear(e);
@@ -1357,7 +1399,7 @@ static void *fade_thread_fn(void *a) {
         v -= 4;
         if (v < 0) v = 0;
         if (pl && sv) {
-            float fbase = g_game_vol > 0.0f ? g_game_vol : 0.75f;
+            float fbase = vol_or_default();
             float fv = (float)v / 1000.0f * fbase;
             (*e)->CallVoidMethod(e, pl, sv, fv, fv);
             if ((*e)->ExceptionOccurred(e)) (*e)->ExceptionClear(e);
@@ -1908,6 +1950,21 @@ static bool sfx_prefix(patch_handle_t inst, void **args, const patch_method_sign
         float v = *(float *)args[4];
         if (v >= 0.0f && v <= 1.0f) vol = v;
     }
+    /* 游戏音量：原版是在 LegacySoundPlayer.PlaySound() 内部乘 Main.soundVolume 的，
+       我们在 hook 里跳过了原版，必须自己乘；拉到 0 时直接交回原版（它会静音返回） */
+    main_vol_refresh();
+    if (g_volfields_ok) {
+        if (g_sound_vol <= 0.0f) {
+            static int logged_mute = 0;
+            if (!logged_mute) {
+                LOGI("sfx: soundVolume=0 -> 交回原版(静音)");
+                logged_mute = 1;
+            }
+            return false;
+        }
+        vol *= g_sound_vol;
+        if (vol > 1.0f) vol = 1.0f;
+    }
     /* 1) OpenSL ES (xnb): 一次加锁内先试 sfx:T:S 再试 sfx:T */
     char k1[64], k2[64];
     snprintf(k1, sizeof(k1), "sfx:%d:%d", type, style);
@@ -1988,6 +2045,7 @@ static bool hook_prefix(patch_handle_t instance, void **args, const void *sig, v
         float b = *vol;
         if (b > 0.0f && b < 2.0f) raw_b = b;
     }
+    main_vol_refresh(); /* 直接跟随 Main.musicVolume / soundVolume（0 也生效） */
     if (g_cover && g_active == -1 && g_cover_ms > 0 && now_ms() - g_cover_ms > 1500) {
         LOGI("cover timeout force clear");
         g_cover = 0;
@@ -2002,7 +2060,15 @@ static bool hook_prefix(patch_handle_t instance, void **args, const void *sig, v
     if (hitid) {
         if (!failed) {
             if (vol) *vol = 0.0f;
-            if (raw_b > 0.0f) {
+            if (g_volfields_ok) {
+                /* 已由 Main.musicVolume 直接驱动（含 0），无需再从 hook 音量反推 */
+                static float last_follow = -1.0f;
+                if (g_game_vol != last_follow) {
+                    last_follow = g_game_vol;
+                    update_player_vol();
+                    LOGI("vol follow %.3f", g_game_vol);
+                }
+            } else if (raw_b > 0.0f) {
                 if (raw_b == g_vol_prev) {
                     g_vol_same_n++;
                 } else {
@@ -2088,7 +2154,7 @@ static bool hook_prefix(patch_handle_t instance, void **args, const void *sig, v
                 if (g_orig_fade_in_ms > 0) {
                     long long el = now_ms() - g_orig_fade_in_ms;
                     const long long fdur = 800;
-                    float gv = g_game_vol > 0.0f ? g_game_vol : 0.75f;
+                    float gv = vol_or_default();
                     if (el >= fdur) {
                         g_orig_fade_in_ms = 0;
                         *vol = gv;
@@ -2100,7 +2166,7 @@ static bool hook_prefix(patch_handle_t instance, void **args, const void *sig, v
                 } else if (g_fading || g_cover || g_active != -1) {
                     *vol = 0.0f;
                 } else {
-                    *vol = g_game_vol > 0.0f ? g_game_vol : 0.75f;
+                    *vol = vol_or_default();
                 }
             }
         }
@@ -2150,6 +2216,7 @@ static bool init_module(module_entry_t *entry) {
         strncpy(g_dir, entry->private_dir, sizeof(g_dir) - 1);
         LOGI("private_dir=%s", g_dir);
     }
+    main_vol_init(); /* 解析 Terraria.Main.soundVolume / musicVolume */
     typedef int (*GetVMs_t)(JavaVM **, jsize, jsize *);
     GetVMs_t fn = 0;
     dl_iterate_phdr(phdr_cb, 0);
