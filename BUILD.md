@@ -18,7 +18,7 @@ MusicPack-Extension/
 ├── tools/                   # pack_module（打 tefpkg）+ gen_sxfnames.py
 ├── docs/                    # MusicID_zh.txt / SoundID_zh.csv
 ├── scripts/build_release.sh # 一键编译 + 打包
-├── Info.json  Manifest.json BUILD.md  README.md  LICENSE
+├── Info.json  Manifest.json BUILD.md  README.md  LICENSE  LICENSE-MIT
 ```
 
 ## 编译（手动）

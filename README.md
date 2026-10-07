@@ -64,7 +64,7 @@ MusicPack-Extension/
 ├── tools/                        # pack_module（打 tefpkg）/ gen_sxfnames.py / tefpkg 源码
 ├── docs/                         # MusicID_zh.txt / SoundID_zh.csv
 ├── scripts/build_release.sh
-├── Info.json  Manifest.json  BUILD.md  README.md  LICENSE
+├── Info.json  Manifest.json  BUILD.md  README.md  LICENSE  LICENSE-MIT
 └── dist/                         # 构建产物（MusicPackExtension.zip）
 ```
 
@@ -156,4 +156,24 @@ splash_ / drip_ / thunder_ / roar_ / tink_ / mech_ / coin_ / coins / liquid_ / c
 
 ## 许可证
 
-沿用原项目 AGPL-3.0（见 `LICENSE`）。
+本 fork 采用 **GNU Affero General Public License v3.0（AGPL-3.0）**，
+完整全文见 [`LICENSE`](LICENSE)。
+
+本项目基于 [qingqing114514/qingshemg](https://github.com/qingqing114514/qingshemg) 的
+`MusicPack Extension` 二次开发，原项目采用 **MIT License**（Copyright (c) 2026
+qingqing114514）。根据 MIT 的要求，原项目的版权声明与许可全文已完整保留在本仓库
+[`LICENSE-MIT`](LICENSE-MIT) 中。
+
+> MIT 与 AGPL-3.0 兼容：允许将 MIT 代码并入以 AGPL-3.0 发布的衍生作品，
+> 只需保留原版权声明与 MIT 许可全文（见上）。
+
+本模块作为 [TEFManager](https://github.com/eternalfuture-e38299/TEFManager)
+（本身同样以 AGPL-3.0 发布）的扩展，并链接了含 AGPL-3.0 代码的 TEFKernel，
+故采用 AGPL-3.0 与所属框架的许可保持一致。
+
+### 第三方组件
+
+`include/tefkernel-cpp-wrapper/`（TEFKernel C 接口）大部分文件为 MIT
+（Copyright (c) eternalfuture-e38299），`tefpkg` 相关文件为 AGPL-3.0；
+`include/lib/miniz.h`、`src/miniz.c` 采用各自文件头部声明的许可（unlicense / MIT）。
+这些文件的原始许可声明保留在原文件中。

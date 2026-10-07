@@ -1,4 +1,26 @@
 /*
+ * MusicPack Extension（优化版）
+ * 基于 qingqing114514/qingshemg 的 MusicPack Extension（MIT）二次开发。
+ *
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ *
+ * Copyright (c) 2026 qingqing114514（原项目，MIT，全文见 LICENSE-MIT）
+ * Copyright (c) 2026 lzup（本二开版本，AGPL-3.0）
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <https://www.gnu.org/licenses/>.
+ */
+/*
  * pack_module.c —— 生成与官方 MusicPack_Extension.tefpkg 完全一致的 13 条布局
  *
  *   [0]  文件列表（1 条: id=12 libmodule.<platform>.<arch>.so），不压缩
